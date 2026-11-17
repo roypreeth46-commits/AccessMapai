@@ -14,7 +14,23 @@ import { LoginModal } from './components/LoginModal';
 import { SosModal } from './components/SosModal';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { Report, GovernmentDepartment, AccessibilitySettings } from './types';
+import { SEED_REPORTS, SEED_DEPARTMENTS } from './data/seedData';
 import { AlertOctagon, Award, Command } from 'lucide-react';
+
+const REPORTS_STORAGE_KEY = 'accessmap_reports_v1';
+
+function loadInitialReports(): Report[] {
+  try {
+    const saved = localStorage.getItem(REPORTS_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+  return SEED_REPORTS;
+}
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string; role: 'user' | 'admin' } | null>(null);
@@ -24,8 +40,8 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isSosOpen, setIsSosOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [departments, setDepartments] = useState<GovernmentDepartment[]>([]);
+  const [reports, setReports] = useState<Report[]>(loadInitialReports);
+  const [departments, setDepartments] = useState<GovernmentDepartment[]>(SEED_DEPARTMENTS);
   const [userProfile, setUserProfile] = useState({ points: 350, badge: 'Gold Mobility Guardian', reportsCount: 4, votesCount: 12 });
 
   const [settings, setSettings] = useState<AccessibilitySettings>({
@@ -38,28 +54,49 @@ export default function App() {
     voiceAssistanceActive: false,
   });
 
-  // Fetch reports and departments on load
+  // Sync reports to localStorage so GitHub Pages static deployment persists changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify(reports));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [reports]);
+
+  // Fetch reports and departments from backend if server is running
   useEffect(() => {
     fetch('/api/reports')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setReports(data);
+      .then(async (res) => {
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType.includes('application/json')) return null;
+        return res.json();
       })
-      .catch((err) => console.error('Failed to fetch reports:', err));
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) setReports(data);
+      })
+      .catch(() => {
+        // Static hosting (GitHub Pages) fallback already loaded via SEED_REPORTS
+      });
 
     fetch('/api/departments')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setDepartments(data);
+      .then(async (res) => {
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType.includes('application/json')) return null;
+        return res.json();
       })
-      .catch((err) => console.error('Failed to fetch departments:', err));
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) setDepartments(data);
+      })
+      .catch(() => {
+        // Static hosting fallback already loaded via SEED_DEPARTMENTS
+      });
   }, []);
 
   // Global Keyboard Shortcut Manager
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing inside input/textarea
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
       const key = e.key.toUpperCase();
       if (key === 'D') setActiveTab('dashboard');
@@ -96,20 +133,41 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser?.email || 'user-current', userEmail: currentUser?.email, voteType }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setReports((prev) =>
-          prev.map((r) => (r.id === reportId ? { ...r, stillPresentVotes: data.stillPresentVotes, noLongerPresentVotes: data.noLongerPresentVotes } : r))
-        );
-        setUserProfile((prev) => ({
-          ...prev,
-          points: prev.points + 10,
-          votesCount: prev.votesCount + 1,
-        }));
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setReports((prev) =>
+            prev.map((r) => (r.id === reportId ? { ...r, stillPresentVotes: data.stillPresentVotes, noLongerPresentVotes: data.noLongerPresentVotes } : r))
+          );
+          setUserProfile((prev) => ({
+            ...prev,
+            points: prev.points + 10,
+            votesCount: prev.votesCount + 1,
+          }));
+          return;
+        }
       }
-    } catch (err) {
-      console.error('Vote error:', err);
+    } catch {
+      // Static hosting fallback below
     }
+
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? {
+              ...r,
+              stillPresentVotes: voteType === 'STILL_PRESENT' ? r.stillPresentVotes + 1 : r.stillPresentVotes,
+              noLongerPresentVotes: voteType === 'NO_LONGER_PRESENT' ? r.noLongerPresentVotes + 1 : r.noLongerPresentVotes,
+            }
+          : r
+      )
+    );
+    setUserProfile((prev) => ({
+      ...prev,
+      points: prev.points + 10,
+      votesCount: prev.votesCount + 1,
+    }));
   };
 
   const handleVerifyReport = async (reportId: string) => {
@@ -119,13 +177,30 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminEmail: 'admin@gmail.com' }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setReports((prev) => prev.map((r) => (r.id === reportId ? data.report : r)));
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setReports((prev) => prev.map((r) => (r.id === reportId ? data.report : r)));
+          return;
+        }
       }
-    } catch (err) {
-      console.error('Verify error:', err);
+    } catch {
+      // Static fallback below
     }
+
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? {
+              ...r,
+              verificationStatus: 'VERIFIED',
+              adminVerifiedBy: 'admin@gmail.com',
+              adminVerificationTimestamp: new Date().toISOString(),
+            }
+          : r
+      )
+    );
   };
 
   const handleRejectReport = async (reportId: string, reason: string) => {
@@ -135,13 +210,29 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminEmail: 'admin@gmail.com', reason }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setReports((prev) => prev.map((r) => (r.id === reportId ? data.report : r)));
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setReports((prev) => prev.map((r) => (r.id === reportId ? data.report : r)));
+          return;
+        }
       }
-    } catch (err) {
-      console.error('Reject error:', err);
+    } catch {
+      // Static fallback below
     }
+
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? {
+              ...r,
+              verificationStatus: 'REJECTED',
+              complaintStatus: 'REJECTED',
+            }
+          : r
+      )
+    );
   };
 
   const handlePublishComplaint = async (reportId: string, departmentId: string) => {
@@ -151,13 +242,31 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminEmail: 'admin@gmail.com', departmentId }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setReports((prev) => prev.map((r) => (r.id === reportId ? data.report : r)));
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setReports((prev) => prev.map((r) => (r.id === reportId ? data.report : r)));
+          return;
+        }
       }
-    } catch (err) {
-      console.error('Publish error:', err);
+    } catch {
+      // Static fallback below
     }
+
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? {
+              ...r,
+              complaintStatus: 'PUBLISHED',
+              publishedDepartmentId: departmentId,
+              publishedAt: new Date().toISOString(),
+              complaintReferenceNumber: `MNC-GOV-${Math.floor(10000 + Math.random() * 90000)}`,
+            }
+          : r
+      )
+    );
   };
 
   // If user is not logged in, show login portal modal on website load
@@ -208,7 +317,7 @@ export default function App() {
               alert('Access Denied: Administrator portal can only be accessed using admin@gmail.com credentials.');
             }
           }}
-          onSearchLocation={(query) => setActiveTab('map')}
+          onSearchLocation={() => setActiveTab('map')}
           onGpsDetect={() => setActiveTab('map')}
           isAdmin={currentUser.role === 'admin'}
         />
