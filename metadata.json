@@ -1,0 +1,6 @@
+{
+  "name": "AccessMap AI",
+  "description": "AI-Powered Accessible Navigation, Obstacle Detection, and Government Complaint Portal for Mobility Accessibility",
+  "requestFramePermissions": ["geolocation", "camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
