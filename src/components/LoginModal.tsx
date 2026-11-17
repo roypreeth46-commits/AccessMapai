@@ -45,13 +45,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#070B14]/95 backdrop-blur-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#070B14]/95 backdrop-blur-2xl overflow-hidden">
+      <div className="aurora-glow absolute -top-24 -left-24 w-96 h-96 rounded-full bg-blue-600/20 blur-3xl pointer-events-none" />
+      <div className="aurora-glow absolute -bottom-24 -right-24 w-96 h-96 rounded-full bg-cyan-500/15 blur-3xl pointer-events-none" />
       <div className="relative w-full max-w-md glass-panel rounded-3xl p-8 shadow-2xl border border-blue-500/40 text-white animate-fadeIn">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-500/30">
-            <Navigation className="w-8 h-8 text-white" />
+          <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-500/30">
+            <span className="radar-ring absolute inset-0 rounded-2xl border border-cyan-300/60" />
+            <Navigation className="w-8 h-8 text-white relative z-10" />
           </div>
-          <h1 className="text-2xl font-extrabold tracking-tight">AccessMap AI</h1>
+          <h1 data-text="AccessMap AI" className="text-2xl font-extrabold tracking-tight glitch-subtle">
+            AccessMap AI
+          </h1>
           <p className="text-xs text-cyan-300 font-medium mt-1">Mangaluru, Karnataka • Accessible Navigation Platform</p>
         </div>
 

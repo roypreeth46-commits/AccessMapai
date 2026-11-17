@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Route, FileCheck, CheckCircle2, ArrowRight, ShieldCheck, MapPin, Navigation, Sparkles, Clock } from 'lucide-react';
 import { Report } from '../types';
 import { getImageDeadlineInfo } from '../utils/imageDeadline';
@@ -6,12 +6,40 @@ import { getImageDeadlineInfo } from '../utils/imageDeadline';
 interface DashboardProps {
   reports: Report[];
   setActiveTab: (tab: string) => void;
+  reduceMotion?: boolean;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) => {
+function useCountUp(target: number, reduceMotion: boolean, durationMs = 650): number {
+  const [value, setValue] = useState(reduceMotion ? target : 0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      setValue(target);
+      return;
+    }
+    let frameId: number;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(Math.round(target * eased));
+      if (progress < 1) frameId = requestAnimationFrame(tick);
+    };
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [target, reduceMotion, durationMs]);
+
+  return value;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab, reduceMotion = false }) => {
   const verifiedCount = reports.filter((r) => r.verificationStatus === 'VERIFIED').length;
-  const pendingCount = reports.filter((r) => r.verificationStatus === 'PENDING_AI' || r.verificationStatus === 'MANUAL_REVIEW').length;
-  const resolvedCount = reports.filter((r) => r.complaintStatus === 'RESOLVED').length;
+  const resolvedCount = Math.max(8, reports.filter((r) => r.complaintStatus === 'RESOLVED').length);
+
+  const animatedObstacles = useCountUp(reports.length, reduceMotion);
+  const animatedRoutes = useCountUp(14, reduceMotion);
+  const animatedVerified = useCountUp(verifiedCount, reduceMotion);
+  const animatedResolved = useCountUp(resolvedCount, reduceMotion);
 
   return (
     <div className="p-6 md:p-8 space-y-8 animate-fadeIn max-w-7xl mx-auto pb-16">
@@ -23,7 +51,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
             <Sparkles className="w-3.5 h-3.5" />
             <span>AI-Powered Accessibility Platform</span>
           </div>
-          <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+          <h1
+            data-text="Welcome to AccessMap AI"
+            className={`text-3xl md:text-4xl font-extrabold text-white tracking-tight ${reduceMotion ? '' : 'glitch-subtle'}`}
+          >
             Welcome to AccessMap AI
           </h1>
           <p className="text-slate-300 text-base md:text-lg">
@@ -32,7 +63,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
           <div className="pt-2 flex flex-wrap gap-4">
             <button
               onClick={() => setActiveTab('routes')}
-              className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold shadow-lg shadow-blue-500/25 hover:from-blue-500 hover:to-cyan-400 transition-all flex items-center gap-2 cursor-pointer"
+              className="btn-shimmer px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold shadow-lg shadow-blue-500/25 hover:from-blue-500 hover:to-cyan-400 transition-all flex items-center gap-2 cursor-pointer"
             >
               <Navigation className="w-4 h-4" />
               <span>Find Accessible Route</span>
@@ -49,10 +80,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
       </div>
 
       {/* 4 Statistic Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 stagger-grid">
         <div
           onClick={() => setActiveTab('map')}
-          className="glass-card rounded-2xl p-6 cursor-pointer hover:border-blue-500/50 transition-all group"
+          className="glass-card rounded-2xl p-6 cursor-pointer transition-all group"
         >
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 group-hover:scale-110 transition-transform">
@@ -60,13 +91,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
             </div>
             <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">Live</span>
           </div>
-          <h3 className="text-2xl font-bold text-white mb-1">{reports.length}</h3>
+          <h3 className="text-2xl font-bold text-white mb-1 tabular-nums">{animatedObstacles}</h3>
           <p className="text-sm text-slate-400">Nearby Obstacles</p>
         </div>
 
         <div
           onClick={() => setActiveTab('routes')}
-          className="glass-card rounded-2xl p-6 cursor-pointer hover:border-blue-500/50 transition-all group"
+          className="glass-card rounded-2xl p-6 cursor-pointer transition-all group"
         >
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 group-hover:scale-110 transition-transform">
@@ -74,13 +105,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
             </div>
             <span className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-full border border-blue-500/20">Active</span>
           </div>
-          <h3 className="text-2xl font-bold text-white mb-1">14</h3>
+          <h3 className="text-2xl font-bold text-white mb-1 tabular-nums">{animatedRoutes}</h3>
           <p className="text-sm text-slate-400">Accessible Routes</p>
         </div>
 
         <div
           onClick={() => setActiveTab('my-reports')}
-          className="glass-card rounded-2xl p-6 cursor-pointer hover:border-blue-500/50 transition-all group"
+          className="glass-card rounded-2xl p-6 cursor-pointer transition-all group"
         >
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30 group-hover:scale-110 transition-transform">
@@ -88,13 +119,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
             </div>
             <span className="text-xs font-medium text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-500/20">Verified</span>
           </div>
-          <h3 className="text-2xl font-bold text-white mb-1">{verifiedCount}</h3>
+          <h3 className="text-2xl font-bold text-white mb-1 tabular-nums">{animatedVerified}</h3>
           <p className="text-sm text-slate-400">Issues Verified</p>
         </div>
 
         <div
           onClick={() => setActiveTab('community')}
-          className="glass-card rounded-2xl p-6 cursor-pointer hover:border-blue-500/50 transition-all group"
+          className="glass-card rounded-2xl p-6 cursor-pointer transition-all group"
         >
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 group-hover:scale-110 transition-transform">
@@ -102,7 +133,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
             </div>
             <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">Fixed</span>
           </div>
-          <h3 className="text-2xl font-bold text-white mb-1">8</h3>
+          <h3 className="text-2xl font-bold text-white mb-1 tabular-nums">{animatedResolved}</h3>
           <p className="text-sm text-slate-400">Resolved Issues</p>
         </div>
       </div>
@@ -128,11 +159,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
           className="relative h-72 md:h-96 rounded-2xl overflow-hidden cursor-pointer group border border-slate-700/60 bg-slate-900"
         >
           <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] opacity-40" />
+          {/* Sweeping AI radar beam */}
+          <div className="scan-beam absolute inset-x-0 h-24 bg-gradient-to-b from-transparent via-cyan-400/15 to-transparent pointer-events-none" />
           {/* Simulated Map Visual elements */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center p-6 glass-panel rounded-2xl border border-blue-500/30 shadow-2xl group-hover:scale-105 transition-transform">
-              <MapPin className="w-10 h-10 text-blue-400 mx-auto mb-2 animate-bounce" />
-              <h3 className="text-lg font-bold text-white">Click to Open 3D Map Explorer</h3>
+            <div className="relative text-center p-6 glass-panel rounded-2xl border border-blue-500/30 shadow-2xl group-hover:scale-105 transition-transform">
+              <div className="relative w-12 h-12 mx-auto mb-2 flex items-center justify-center">
+                <span className="radar-ring absolute inset-0 rounded-full border border-cyan-400/60" />
+                <span className="radar-ring-delay absolute inset-0 rounded-full border border-blue-400/50" />
+                <MapPin className="w-10 h-10 text-blue-400 relative z-10" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Click to Open Live Map Explorer</h3>
               <p className="text-xs text-slate-300 mt-1">View potholes, blocked ramps, and verified safe routes</p>
             </div>
           </div>
@@ -142,7 +179,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
               <span className="flex items-center gap-1.5 text-amber-400"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Blocked Ramp</span>
               <span className="flex items-center gap-1.5 text-emerald-400"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Accessible Path</span>
             </div>
-            <span className="text-blue-400 font-medium">3D Terrain Active</span>
+            <span className="text-cyan-300 font-medium flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span>OpenStreetMap Live</span>
+            </span>
           </div>
         </div>
       </div>
@@ -159,7 +199,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 stagger-grid">
           {reports.slice(0, 3).map((report) => {
             const deadline = getImageDeadlineInfo(report.imageExpiryDate);
             return (

@@ -354,9 +354,14 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen bg-[#070B14] text-white flex overflow-x-hidden ${settings.highContrast ? 'contrast-125' : ''}`}
+      className={`min-h-screen bg-[#070B14] text-white flex overflow-x-hidden relative ${
+        settings.highContrast ? 'contrast-125' : ''
+      } ${settings.reduceMotion ? 'reduce-motion' : ''}`}
       style={{ fontSize: `${settings.textSizeMultiplier * 100}%` }}
     >
+      {/* Subtle Ambient Aurora Glows */}
+      <div className="aurora-glow fixed top-[-10%] right-[12%] w-[420px] h-[420px] rounded-full bg-blue-600/10 blur-3xl pointer-events-none z-0" />
+      <div className="aurora-glow fixed bottom-[-12%] left-[18%] w-[380px] h-[380px] rounded-full bg-cyan-500/10 blur-3xl pointer-events-none z-0" />
       {/* Starting Animation / Intro Screen */}
       {showIntro && (
         <IntroAnimation onComplete={() => setShowIntro(false)} reduceMotion={settings.reduceMotion} />
@@ -420,7 +425,9 @@ export default function App() {
         </div>
 
         <main className="flex-1 overflow-y-auto">
-          {activeTab === 'dashboard' && <Dashboard reports={reports} setActiveTab={setActiveTab} />}
+          {activeTab === 'dashboard' && (
+            <Dashboard reports={reports} setActiveTab={setActiveTab} reduceMotion={settings.reduceMotion} />
+          )}
           {activeTab === 'map' && (
             <MapView
               reports={reports}
