@@ -271,7 +271,38 @@ export default function App() {
     );
   };
 
-  const handleRevalidateImage = async (reportId: string, newImageUrl?: string, validityDays: number = 7) => {
+  const handleRevalidateImage = async (
+    reportId: string,
+    newImageUrl?: string,
+    validityDays: number = 7
+  ): Promise<{ ok: boolean; message?: string }> => {
+    if (newImageUrl) {
+      try {
+        const aiRes = await fetch('/api/gemini/verify-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: newImageUrl,
+            issueType: 'pothole',
+            description: 'Revalidation photo upload',
+          }),
+        });
+        const contentType = aiRes.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          return { ok: false, message: 'AI pothole verification server is unavailable.' };
+        }
+        const aiData = await aiRes.json();
+        if (!aiRes.ok || !aiData.isValid || aiData.verificationStatus !== 'AI_APPROVED') {
+          return {
+            ok: false,
+            message: aiData?.explanation || aiData?.error || 'AI Rejected: Only genuine pothole images are approved.',
+          };
+        }
+      } catch {
+        return { ok: false, message: 'Unable to verify image with AI pothole inspection.' };
+      }
+    }
+
     try {
       const res = await fetch(`/api/reports/${reportId}/revalidate`, {
         method: 'POST',
@@ -287,7 +318,7 @@ export default function App() {
         const data = await res.json();
         if (data.success && data.report) {
           setReports((prev) => prev.map((r) => (r.id === reportId ? data.report : r)));
-          return;
+          return { ok: true };
         }
       }
     } catch {
@@ -306,6 +337,7 @@ export default function App() {
           : r
       )
     );
+    return { ok: true };
   };
 
   // If user is not logged in, show login portal modal on website load

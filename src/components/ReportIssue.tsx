@@ -44,6 +44,8 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({ onReportSubmitted, set
         const result = reader.result as string;
         setImageBase64(result);
         setImageUrl(result);
+        setVerificationResult(null);
+        setSubmitFeedback('');
       };
       reader.readAsDataURL(file);
     }
@@ -84,6 +86,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({ onReportSubmitted, set
       return;
     }
     setSubmitFeedback('');
+    setVerificationResult(null);
     setIsVerifying(true);
     try {
       const res = await fetch('/api/gemini/verify-image', {
@@ -96,26 +99,34 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({ onReportSubmitted, set
         }),
       });
       const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        setVerificationResult(data);
-        setIsVerifying(false);
-        setStep(3);
-        return;
+      if (!contentType.includes('application/json')) {
+        throw new Error('AI pothole verification server is unavailable. Only AI-verified pothole images can be approved.');
       }
-      throw new Error('Static hosting fallback');
-    } catch {
-      setVerificationResult({
-        isValid: true,
-        verificationStatus: 'AI_APPROVED',
-        confidenceScore: 0.94,
-        authenticityScore: 0.98,
-        detectedCategory: issueType,
-        explanation: 'AI verification pipeline completed. Ready for community & admin review.',
-        shadowDetected: false,
-      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'AI verification failed. Could not verify image.');
+      }
+
+      setVerificationResult(data);
       setIsVerifying(false);
-      setStep(3);
+
+      if (data.isValid && data.verificationStatus === 'AI_APPROVED') {
+        setStep(3);
+      } else {
+        setSubmitFeedback(
+          `AI Rejected Image: ${data.explanation || 'Only genuine pothole photographs are approved.'}`
+        );
+      }
+    } catch (err: any) {
+      setIsVerifying(false);
+      setVerificationResult({
+        isValid: false,
+        isPothole: false,
+        verificationStatus: 'AI_REJECTED',
+        detectedCategory: 'unverified',
+        explanation: err?.message || 'Unable to verify pothole image with AI service.',
+      });
+      setSubmitFeedback(err?.message || 'AI pothole verification failed. Please try again.');
     }
   };
 
@@ -267,8 +278,33 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({ onReportSubmitted, set
       {/* Step 2: Upload Photograph & AI Verification */}
       {step === 2 && (
         <div className="glass-panel rounded-3xl p-6 md:p-8 border border-slate-800 space-y-6">
-          <h2 className="text-xl font-bold text-white">Upload Photograph & AI Verification</h2>
-          <p className="text-sm text-slate-300">Provide a clear photograph of the accessibility obstacle for AI authenticity and hazard analysis.</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-bold text-white">Upload Photograph & AI Verification</h2>
+              <p className="text-sm text-slate-300">
+                Strict AI Policy: Only genuine pothole photographs are approved. Non-pothole images, shadows, or unrelated photos are automatically rejected.
+              </p>
+            </div>
+          </div>
+
+          {verificationResult && verificationResult.verificationStatus === 'AI_REJECTED' && (
+            <div className="p-4 rounded-2xl bg-red-500/15 border border-red-500/40 text-red-200 text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-red-300 uppercase tracking-wider">
+                  AI Verification Rejected ({verificationResult.verificationStatus})
+                </span>
+                {verificationResult.detectedCategory && (
+                  <span className="px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/30 text-[11px]">
+                    Detected: {verificationResult.detectedCategory}
+                  </span>
+                )}
+              </div>
+              <p>{verificationResult.explanation}</p>
+              <p className="text-red-300/90 font-medium">
+                Please upload a clear photograph of an actual road or footpath pothole to continue.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
             <div className="relative h-64 rounded-2xl overflow-hidden bg-slate-900 border border-slate-700 flex items-center justify-center">

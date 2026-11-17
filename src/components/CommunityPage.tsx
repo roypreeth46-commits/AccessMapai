@@ -6,12 +6,13 @@ import { getImageDeadlineInfo } from '../utils/imageDeadline';
 interface CommunityPageProps {
   reports: Report[];
   onVote: (reportId: string, voteType: 'STILL_PRESENT' | 'NO_LONGER_PRESENT') => void;
-  onRevalidateImage?: (reportId: string, newImageUrl?: string, validityDays?: number) => void;
+  onRevalidateImage?: (reportId: string, newImageUrl?: string, validityDays?: number) => Promise<{ ok: boolean; message?: string }> | void;
 }
 
 export const CommunityPage: React.FC<CommunityPageProps> = ({ reports, onVote, onRevalidateImage }) => {
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
   const [revalidatedId, setRevalidatedId] = useState<string | null>(null);
+  const [revalidationError, setRevalidationError] = useState<{ id: string; message: string } | null>(null);
   const [commentsMap, setCommentsMap] = useState<{ [key: string]: string[] }>({
     'REP-MNG-01': ['Still very dangerous during evening rush!', 'Crews inspected yesterday.'],
     'REP-MNG-02': ['Two-wheelers still blocking the ramp near college gate.'],
@@ -32,9 +33,17 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ reports, onVote, o
   const handlePhotoReupload = (reportId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !onRevalidateImage) return;
+    setRevalidationError(null);
     const reader = new FileReader();
-    reader.onloadend = () => {
-      onRevalidateImage(reportId, reader.result as string, 7);
+    reader.onloadend = async () => {
+      const result = await onRevalidateImage(reportId, reader.result as string, 7);
+      if (result && !result.ok) {
+        setRevalidationError({
+          id: reportId,
+          message: result.message || 'AI Rejected: Only genuine pothole photos are approved.',
+        });
+        return;
+      }
       setRevalidatedId(reportId);
       setTimeout(() => setRevalidatedId(null), 3000);
     };
@@ -140,7 +149,14 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ reports, onVote, o
               {revalidatedId === report.id && (
                 <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Photo verification deadline renewed for 7 days.</span>
+                  <span>Photo verified as pothole and deadline renewed for 7 days.</span>
+                </div>
+              )}
+
+              {revalidationError?.id === report.id && (
+                <div className="p-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-200 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+                  <span>{revalidationError.message}</span>
                 </div>
               )}
 

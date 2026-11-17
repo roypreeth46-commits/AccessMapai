@@ -6,18 +6,33 @@ import { getImageDeadlineInfo } from '../utils/imageDeadline';
 interface MyReportsProps {
   reports: Report[];
   setActiveTab: (tab: string) => void;
-  onRevalidateImage?: (reportId: string, newImageUrl?: string, validityDays?: number) => void;
+  onRevalidateImage?: (reportId: string, newImageUrl?: string, validityDays?: number) => Promise<{ ok: boolean; message?: string }> | void;
 }
 
 export const MyReports: React.FC<MyReportsProps> = ({ reports, setActiveTab, onRevalidateImage }) => {
+  const [revalidationMsg, setRevalidationMsg] = React.useState<{ id: string; ok: boolean; text: string } | null>(null);
   const userReports = reports.filter((r) => r.userId === 'user-current' || r.userName === 'Elena Rostova');
 
   const handlePhotoReupload = (reportId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !onRevalidateImage) return;
+    setRevalidationMsg(null);
     const reader = new FileReader();
-    reader.onloadend = () => {
-      onRevalidateImage(reportId, reader.result as string, 7);
+    reader.onloadend = async () => {
+      const result = await onRevalidateImage(reportId, reader.result as string, 7);
+      if (result && !result.ok) {
+        setRevalidationMsg({
+          id: reportId,
+          ok: false,
+          text: result.message || 'AI Rejected: Only genuine pothole photos are approved.',
+        });
+      } else {
+        setRevalidationMsg({
+          id: reportId,
+          ok: true,
+          text: 'Photo verified as pothole and deadline renewed for 7 days.',
+        });
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -117,6 +132,16 @@ export const MyReports: React.FC<MyReportsProps> = ({ reports, setActiveTab, onR
                     </label>
                   )}
                 </div>
+
+                {revalidationMsg?.id === report.id && (
+                  <div className={`p-2.5 rounded-xl border text-xs ${
+                    revalidationMsg.ok
+                      ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
+                      : 'bg-red-500/20 border-red-500/30 text-red-200'
+                  }`}>
+                    {revalidationMsg.text}
+                  </div>
+                )}
               </div>
             );
           })}

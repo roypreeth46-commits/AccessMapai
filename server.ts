@@ -269,31 +269,62 @@ let dbAuditLogs: AuditLog[] = [
   },
 ];
 
-// API: AI Image Verification using @google/genai with googleSearch grounding
+// API: AI Image Verification using @google/genai (strictly approves only genuine pothole images)
 app.post('/api/gemini/verify-image', async (req, res) => {
-  let reqIssueType = 'pothole';
   try {
     const { imageBase64, mimeType = 'image/jpeg', issueType, description } = req.body;
-    reqIssueType = issueType || 'pothole';
-    if (!imageBase64) {
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
       return res.status(400).json({ error: 'Image data is required' });
     }
 
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({
+        error: 'GEMINI_API_KEY is not configured on the server. AI pothole verification cannot approve images without Gemini API.',
+      });
+    }
 
-    const prompt = `You are an expert AI computer vision system for verifying urban accessibility issues (potholes, damaged footpaths, blocked wheelchair ramps, construction barriers, broken pavements).
-Analyze this uploaded photograph for an accessibility report of type: "${issueType}". Description: "${description || 'none'}".
+    let resolvedMimeType = mimeType;
+    let cleanBase64 = '';
 
-Evaluate carefully:
-1. Distinguish between actual physical road hazards (potholes with depth/texture, broken paving slabs, blocked ramps) vs shadows, dark water reflections, normal road markings, or camera blur.
-2. Assess authenticity and likelihood of being an original real-world photo.
-3. Provide an estimate of AI confidence (0.0 to 1.0) and authenticity score (0.0 to 1.0).
-4. Determine verification status: "AI_APPROVED" (clear valid hazard), "AI_REJECTED" (fake, irrelevant, stock photo, or clearly just a shadow/normal road), or "MANUAL_REVIEW" (uncertain / borderline case).
+    const dataUriMatch = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (dataUriMatch) {
+      resolvedMimeType = dataUriMatch[1];
+      cleanBase64 = dataUriMatch[2];
+    } else if (imageBase64.startsWith('http://') || imageBase64.startsWith('https://')) {
+      const imgRes = await fetch(imageBase64);
+      if (!imgRes.ok) {
+        return res.status(400).json({ error: 'Could not fetch image URL for AI verification.' });
+      }
+      resolvedMimeType = imgRes.headers.get('content-type')?.split(';')[0] || 'image/jpeg';
+      const arrayBuf = await imgRes.arrayBuffer();
+      cleanBase64 = Buffer.from(arrayBuf).toString('base64');
+    } else {
+      cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '');
+    }
 
-Return JSON matching this schema:
+    if (!cleanBase64) {
+      return res.status(400).json({ error: 'Invalid or empty image payload.' });
+    }
+
+    const prompt = `You are a strict AI road infrastructure inspector for AccessMap AI.
+Inspect the provided image carefully.
+User-selected category: "${issueType || 'pothole'}". User note: "${description || 'none'}".
+
+STRICT POLICY — POTHOLE IMAGES ONLY:
+1. Approve ("AI_APPROVED", isValid=true, isPothole=true) ONLY IF the image clearly and unmistakably shows a real physical POTHOLE (a sunken crater, cavity, broken asphalt hole, or deep surface depression in a road, street, or paved footpath).
+2. You MUST REJECT ("AI_REJECTED", isValid=false, isPothole=false) EVERY OTHER TYPE OF IMAGE, including:
+   - People, selfies, faces, hands, animals, pets, plants, trees, food, indoor rooms, furniture, electronics, documents, screenshots, memes, or illustrations.
+   - Clean or intact roads/sidewalks with NO visible pothole.
+   - Shadows, tree shadows, dark stains, wet spots, or puddles that do NOT clearly show a broken road pothole.
+   - Cars, motorcycles, or random objects without a clear pothole.
+   - Blurry, blank, or unrecognizable images.
+3. Never approve an image just because the user's text mentions a pothole—judge strictly by what is visually present in the image.
+
+Return JSON matching this exact schema:
 {
+  "isPothole": boolean,
   "isValid": boolean,
-  "verificationStatus": "AI_APPROVED" | "AI_REJECTED" | "MANUAL_REVIEW",
+  "verificationStatus": "AI_APPROVED" | "AI_REJECTED",
   "confidenceScore": number,
   "authenticityScore": number,
   "detectedCategory": string,
@@ -303,46 +334,73 @@ Return JSON matching this schema:
 
     const response = await ai.models.generateContent({
       model: 'gemini-4-hydrogen',
-      contents: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: cleanBase64,
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: resolvedMimeType,
+              data: cleanBase64,
+            },
           },
-        },
-        { text: prompt },
-      ],
+          { text: prompt },
+        ],
+      },
       config: {
-        tools: [{ googleSearch: {} }],
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            isPothole: { type: Type.BOOLEAN },
             isValid: { type: Type.BOOLEAN },
-            verificationStatus: { type: Type.STRING, description: 'AI_APPROVED, AI_REJECTED, or MANUAL_REVIEW' },
+            verificationStatus: { type: Type.STRING, description: 'AI_APPROVED or AI_REJECTED' },
             confidenceScore: { type: Type.NUMBER },
             authenticityScore: { type: Type.NUMBER },
             detectedCategory: { type: Type.STRING },
             explanation: { type: Type.STRING },
             shadowDetected: { type: Type.BOOLEAN },
           },
-          required: ['isValid', 'verificationStatus', 'confidenceScore', 'authenticityScore', 'detectedCategory', 'explanation', 'shadowDetected'],
+          required: [
+            'isPothole',
+            'isValid',
+            'verificationStatus',
+            'confidenceScore',
+            'authenticityScore',
+            'detectedCategory',
+            'explanation',
+            'shadowDetected',
+          ],
         },
       },
     });
 
-    const resultJson = JSON.parse(response.text || '{}');
-    res.json(resultJson);
+    const parsed = JSON.parse((response.text || '{}').trim());
+    const confidenceScore = Number(parsed.confidenceScore ?? 0);
+    const authenticityScore = Number(parsed.authenticityScore ?? 0);
+    const shadowDetected = Boolean(parsed.shadowDetected);
+    const isPothole = Boolean(parsed.isPothole);
+    const approved =
+      isPothole &&
+      Boolean(parsed.isValid) &&
+      !shadowDetected &&
+      confidenceScore >= 0.7 &&
+      parsed.verificationStatus === 'AI_APPROVED';
+
+    return res.json({
+      isPothole: approved,
+      isValid: approved,
+      verificationStatus: approved ? 'AI_APPROVED' : 'AI_REJECTED',
+      confidenceScore,
+      authenticityScore,
+      detectedCategory: parsed.detectedCategory || (approved ? 'pothole' : 'not_a_pothole'),
+      explanation: approved
+        ? parsed.explanation || 'Verified genuine road/footpath pothole.'
+        : parsed.explanation || 'Rejected: Image does not clearly show a genuine road or pavement pothole.',
+      shadowDetected,
+    });
   } catch (err: any) {
     console.error('Gemini image verification error:', err);
-    res.json({
-      isValid: true,
-      verificationStatus: 'AI_APPROVED',
-      confidenceScore: 0.94,
-      authenticityScore: 0.97,
-      detectedCategory: reqIssueType,
-      explanation: 'AI successfully cross-checked image features and verified genuine urban obstacle characteristics.',
-      shadowDetected: false,
+    return res.status(502).json({
+      error: err?.message || 'AI pothole verification failed due to an upstream API error. Please try again.',
     });
   }
 });
