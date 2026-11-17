@@ -10,9 +10,22 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
   </head>
-  <body>
+  <body style="background-color: #070B14; color: #F3F4F6; margin: 0;">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // If GitHub Pages serves the raw unbuilt repository root (where /src/main.tsx is uncompiled),
+      // redirect to the pre-built static bundle in ./docs/ so the site loads instead of a blank page.
+      if (
+        window.location.hostname.endsWith('github.io') &&
+        document.querySelector('script[src="/src/main.tsx"]') &&
+        !window.location.pathname.includes('/docs/')
+      ) {
+        var base = window.location.pathname.endsWith('/')
+          ? window.location.pathname
+          : window.location.pathname + '/';
+        window.location.replace(base + 'docs/' + window.location.search + window.location.hash);
+      }
+    </script>
   </body>
 </html>
-
