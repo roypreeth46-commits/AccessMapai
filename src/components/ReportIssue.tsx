@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Mic, MapPin, CheckCircle2, Sparkles, ArrowRight, Locate, Loader2 } from 'lucide-react';
+import { AlertTriangle, Mic, MapPin, CheckCircle2, Sparkles, ArrowRight, Locate, Loader2, Clock } from 'lucide-react';
 import { Report } from '../types';
+import { computeExpiryDate } from '../utils/imageDeadline';
 
 interface ReportIssueProps {
   onReportSubmitted: (newReport: Report) => void;
@@ -24,6 +25,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({ onReportSubmitted, set
   const [isLocating, setIsLocating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitFeedback, setSubmitFeedback] = useState('');
+  const [validityDays, setValidityDays] = useState<number>(7);
 
   const issueCategories: { id: Report['issueType']; label: string; icon: string; desc: string }[] = [
     { id: 'pothole', label: 'Pothole', icon: '🕳️', desc: 'Deep holes or cracks in road surface' },
@@ -155,6 +157,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({ onReportSubmitted, set
       aiExplanation: verificationResult?.explanation || 'AI verified obstacle.',
       authenticityScore: verificationResult?.authenticityScore || 0.95,
       verificationStatus: verificationResult?.verificationStatus || 'AI_APPROVED',
+      validityDays,
     };
 
     try {
@@ -180,8 +183,8 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({ onReportSubmitted, set
         complaintStatus: 'PREPARED',
         stillPresentVotes: 1,
         noLongerPresentVotes: 0,
-        imageExpiryDate: new Date(Date.now() + 86400000 * 7).toISOString(),
-        imageValidityStatus: 'ACTIVE',
+        imageExpiryDate: computeExpiryDate(validityDays),
+        imageValidityStatus: validityDays <= 2 ? 'EXPIRING_SOON' : 'ACTIVE',
       };
       onReportSubmitted(localReport);
       setIsSubmitting(false);
@@ -299,6 +302,42 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({ onReportSubmitted, set
                     I confirm that this photograph is genuine and represents the actual accessibility problem at the reported location.
                   </span>
                 </label>
+              </div>
+
+              {/* Photo Verification Deadline Selector */}
+              <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Photo Verification Deadline</span>
+                  </span>
+                  <span className="text-cyan-300 font-mono tabular-nums">
+                    Expires {new Date(computeExpiryDate(validityDays)).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { days: 3, label: '3 Days (Temp)' },
+                    { days: 7, label: '7 Days (Std)' },
+                    { days: 14, label: '14 Days (Major)' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.days}
+                      type="button"
+                      onClick={() => setValidityDays(opt.days)}
+                      className={`py-2 px-2 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
+                        validityDays === opt.days
+                          ? 'bg-cyan-600/30 border-cyan-400 text-cyan-200'
+                          : 'bg-slate-800/70 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  After this deadline, the photo is marked expired until revalidated with a fresh upload.
+                </p>
               </div>
             </div>
           </div>

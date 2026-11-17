@@ -1,14 +1,26 @@
 import React from 'react';
-import { FileText, MapPin, ShieldCheck, Clock, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
+import { FileText, MapPin, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Report } from '../types';
+import { getImageDeadlineInfo } from '../utils/imageDeadline';
 
 interface MyReportsProps {
   reports: Report[];
   setActiveTab: (tab: string) => void;
+  onRevalidateImage?: (reportId: string, newImageUrl?: string, validityDays?: number) => void;
 }
 
-export const MyReports: React.FC<MyReportsProps> = ({ reports, setActiveTab }) => {
+export const MyReports: React.FC<MyReportsProps> = ({ reports, setActiveTab, onRevalidateImage }) => {
   const userReports = reports.filter((r) => r.userId === 'user-current' || r.userName === 'Elena Rostova');
+
+  const handlePhotoReupload = (reportId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onRevalidateImage) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      onRevalidateImage(reportId, reader.result as string, 7);
+    };
+    reader.readAsDataURL(file);
+  };
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8 animate-fadeIn pb-16">
@@ -20,7 +32,7 @@ export const MyReports: React.FC<MyReportsProps> = ({ reports, setActiveTab }) =
           </div>
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-white">My Submitted Reports</h1>
-            <p className="text-sm text-slate-300">Track the verification and municipal complaint status of your accessibility reports</p>
+            <p className="text-sm text-slate-300">Track verification, photo deadlines, and municipal complaint status of your accessibility reports</p>
           </div>
         </div>
       </div>
@@ -41,48 +53,73 @@ export const MyReports: React.FC<MyReportsProps> = ({ reports, setActiveTab }) =
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {userReports.map((report) => (
-            <div key={report.id} className="glass-card rounded-3xl p-6 border border-slate-800 space-y-4 flex flex-col justify-between">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                    {report.id}
+          {userReports.map((report) => {
+            const deadline = getImageDeadlineInfo(report.imageExpiryDate);
+            return (
+              <div key={report.id} className="glass-card rounded-3xl p-6 border border-slate-800 space-y-4 flex flex-col justify-between">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                      {report.id}
+                    </span>
+                    <h3 className="text-lg font-bold text-white mt-2">{report.title}</h3>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                    report.verificationStatus === 'VERIFIED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}>
+                    {report.verificationStatus}
                   </span>
-                  <h3 className="text-lg font-bold text-white mt-2">{report.title}</h3>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  report.verificationStatus === 'VERIFIED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}>
-                  {report.verificationStatus}
-                </span>
-              </div>
 
-              <div className="flex gap-4 items-center">
-                <img src={report.imageUrl} alt={report.title} className="w-24 h-24 rounded-2xl object-cover bg-slate-900 border border-slate-700 shrink-0" />
-                <div className="space-y-1.5 text-xs text-slate-300">
-                  <p className="flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                    <span>{report.address}</span>
-                  </p>
-                  <p className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Submitted: {new Date(report.createdAt).toLocaleDateString()}</span>
-                  </p>
-                  <p className="text-slate-400 line-clamp-2">{report.description}</p>
+                <div className="flex gap-4 items-center">
+                  <div className="relative w-24 h-24 shrink-0">
+                    <img
+                      src={report.imageUrl}
+                      alt={report.title}
+                      className={`w-24 h-24 rounded-2xl object-cover bg-slate-900 border border-slate-700 ${deadline.isExpired ? 'opacity-60 grayscale-[45%]' : ''}`}
+                    />
+                  </div>
+                  <div className="space-y-1.5 text-xs text-slate-300 min-w-0">
+                    <p className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="truncate">{report.address}</span>
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                      <span>Submitted: {new Date(report.createdAt).toLocaleDateString()}</span>
+                    </p>
+                    <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold tabular-nums ${deadline.badgeClass}`}>
+                      {deadline.isExpired ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                      <span>{deadline.label} (Ends {deadline.expiryFormatted})</span>
+                    </div>
+                    <p className="text-slate-400 line-clamp-2">{report.description}</p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="pt-4 border-t border-slate-800 flex items-center justify-between text-xs">
-                <div>
-                  <span className="text-slate-400">Complaint Status:</span>
-                  <span className="font-semibold text-cyan-400 ml-1">{report.complaintStatus}</span>
+                <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-400">Complaint Status:</span>
+                    <span className="font-semibold text-cyan-400 ml-1">{report.complaintStatus}</span>
+                    {report.complaintReferenceNumber && (
+                      <span className="text-slate-400 font-mono ml-2">Ref: {report.complaintReferenceNumber}</span>
+                    )}
+                  </div>
+                  {onRevalidateImage && (
+                    <label className="px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/35 text-blue-300 border border-blue-500/30 font-semibold flex items-center gap-1.5 cursor-pointer transition-colors">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Revalidate Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handlePhotoReupload(report.id, e)}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
-                {report.complaintReferenceNumber && (
-                  <span className="text-slate-400 font-mono">Ref: {report.complaintReferenceNumber}</span>
-                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

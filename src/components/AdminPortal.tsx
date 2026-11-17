@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Lock, Mail, Users, FileText, CheckCircle2, XCircle, Send, Building, MapPin, ArrowLeft, LogOut, Check, Sparkles, Clock } from 'lucide-react';
+import { ShieldAlert, Lock, Mail, Users, FileText, CheckCircle2, XCircle, Send, Building, MapPin, ArrowLeft, LogOut, Check, Sparkles, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Report, GovernmentDepartment } from '../types';
+import { getImageDeadlineInfo } from '../utils/imageDeadline';
 
 interface AdminPortalProps {
   reports: Report[];
@@ -8,6 +9,7 @@ interface AdminPortalProps {
   onVerifyReport: (reportId: string) => void;
   onRejectReport: (reportId: string, reason: string) => void;
   onPublishComplaint: (reportId: string, departmentId: string) => void;
+  onRevalidateImage?: (reportId: string, newImageUrl?: string, validityDays?: number) => void;
   onClose: () => void;
 }
 
@@ -17,6 +19,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onVerifyReport,
   onRejectReport,
   onPublishComplaint,
+  onRevalidateImage,
   onClose,
 }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -27,6 +30,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [selectedDeptId, setSelectedDeptId] = useState(departments[0]?.id || '');
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [extendDays, setExtendDays] = useState<number>(7);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +46,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const pendingCount = reports.filter((r) => r.verificationStatus === 'PENDING_AI' || r.verificationStatus === 'MANUAL_REVIEW').length;
   const verifiedCount = reports.filter((r) => r.verificationStatus === 'VERIFIED').length;
   const publishedCount = reports.filter((r) => r.complaintStatus === 'PUBLISHED').length;
+  const expiringOrExpiredCount = reports.filter((r) => {
+    const d = getImageDeadlineInfo(r.imageExpiryDate);
+    return d.isExpired || d.isExpiringSoon;
+  }).length;
 
   if (!isLoggedIn) {
     return (
@@ -127,6 +135,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             { id: 'dashboard', label: 'Dashboard', icon: FileText },
             { id: 'reports', label: 'All Reports', icon: Users },
             { id: 'pending', label: 'Pending Verification', icon: Clock },
+            { id: 'expiring', label: `Image Deadlines (${expiringOrExpiredCount})`, icon: AlertTriangle },
             { id: 'published', label: 'Published Complaints', icon: Send },
             { id: 'departments', label: 'Government Depts', icon: Building },
           ].map((item) => {
@@ -209,50 +218,70 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       <th className="pb-3 px-3">ID</th>
                       <th className="pb-3 px-3">Issue Type</th>
                       <th className="pb-3 px-3">Location</th>
+                      <th className="pb-3 px-3">Photo Deadline</th>
                       <th className="pb-3 px-3">Status</th>
                       <th className="pb-3 px-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {reports.map((report) => (
-                      <tr key={report.id} className="hover:bg-slate-900/40">
-                        <td className="py-3 px-3 font-mono text-cyan-400">{report.id}</td>
-                        <td className="py-3 px-3 font-semibold uppercase">{report.issueType}</td>
-                        <td className="py-3 px-3 text-slate-300">{report.address}</td>
-                        <td className="py-3 px-3">
-                          <span className={`px-2.5 py-1 rounded-full font-medium ${
-                            report.verificationStatus === 'VERIFIED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
-                          }`}>
-                            {report.verificationStatus}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 flex items-center gap-2">
-                          {report.verificationStatus !== 'VERIFIED' && (
+                    {reports.map((report) => {
+                      const deadline = getImageDeadlineInfo(report.imageExpiryDate);
+                      return (
+                        <tr key={report.id} className="hover:bg-slate-900/40">
+                          <td className="py-3 px-3 font-mono text-cyan-400">{report.id}</td>
+                          <td className="py-3 px-3 font-semibold uppercase">{report.issueType}</td>
+                          <td className="py-3 px-3 text-slate-300">{report.address}</td>
+                          <td className="py-3 px-3">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border tabular-nums ${deadline.badgeClass}`}>
+                              {deadline.isExpired ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                              <span>{deadline.shortLabel}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2.5 py-1 rounded-full font-medium ${
+                              report.verificationStatus === 'VERIFIED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                            }`}>
+                              {report.verificationStatus}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 flex items-center gap-2">
+                            {report.verificationStatus !== 'VERIFIED' && (
+                              <button
+                                onClick={() => onVerifyReport(report.id)}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer"
+                              >
+                                Verify
+                              </button>
+                            )}
+                            {onRevalidateImage && (
+                              <button
+                                onClick={() => onRevalidateImage(report.id, undefined, extendDays)}
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold cursor-pointer flex items-center gap-1"
+                                title={`Extend image deadline by ${extendDays} days`}
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                <span>+{extendDays}d</span>
+                              </button>
+                            )}
                             <button
-                              onClick={() => onVerifyReport(report.id)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold cursor-pointer"
+                              onClick={() => {
+                                setSelectedReportForAction(report);
+                                setShowPublishModal(true);
+                              }}
+                              disabled={report.verificationStatus !== 'VERIFIED'}
+                              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 ${
+                                report.verificationStatus === 'VERIFIED'
+                                  ? 'bg-cyan-600 hover:bg-cyan-500 text-white cursor-pointer'
+                                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                              }`}
                             >
-                              Verify
+                              <Send className="w-3 h-3" />
+                              <span>Publish Complaint</span>
                             </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setSelectedReportForAction(report);
-                              setShowPublishModal(true);
-                            }}
-                            disabled={report.verificationStatus !== 'VERIFIED'}
-                            className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 ${
-                              report.verificationStatus === 'VERIFIED'
-                                ? 'bg-cyan-600 hover:bg-cyan-500 text-white cursor-pointer'
-                                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                            }`}
-                          >
-                            <Send className="w-3 h-3" />
-                            <span>Publish Complaint</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -260,51 +289,121 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </div>
         )}
 
-        {/* All Reports & Verification Tab */}
-        {(adminTab === 'reports' || adminTab === 'pending') && (
+        {/* All Reports, Pending & Image Deadlines Tab */}
+        {(adminTab === 'reports' || adminTab === 'pending' || adminTab === 'expiring' || adminTab === 'published') && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold">All User Accessibility Reports</h2>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold">
+                  {adminTab === 'expiring'
+                    ? 'Expiring & Expired Photo Evidence'
+                    : adminTab === 'pending'
+                    ? 'Reports Pending Verification'
+                    : adminTab === 'published'
+                    ? 'Published Municipal Complaints'
+                    : 'All User Accessibility Reports'}
+                </h2>
+                <p className="text-xs text-slate-400">Monitor photo expiry deadlines and extend or verify evidence</p>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Renewal Period:</span>
+                {[3, 7, 14].map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setExtendDays(d)}
+                    className={`px-2.5 py-1 rounded-lg border font-semibold cursor-pointer ${
+                      extendDays === d
+                        ? 'bg-cyan-600/30 border-cyan-400 text-cyan-200'
+                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {d} Days
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {reports.map((report) => (
-                <div key={report.id} className="glass-card rounded-3xl p-6 border border-slate-800 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">{report.id}</span>
-                      <h3 className="font-bold text-base mt-1">{report.title}</h3>
+              {reports
+                .filter((report) => {
+                  if (adminTab === 'pending') {
+                    return report.verificationStatus === 'PENDING_AI' || report.verificationStatus === 'MANUAL_REVIEW' || report.verificationStatus === 'AI_APPROVED';
+                  }
+                  if (adminTab === 'published') {
+                    return report.complaintStatus === 'PUBLISHED' || report.complaintStatus === 'ACKNOWLEDGED';
+                  }
+                  if (adminTab === 'expiring') {
+                    const d = getImageDeadlineInfo(report.imageExpiryDate);
+                    return d.isExpired || d.isExpiringSoon;
+                  }
+                  return true;
+                })
+                .map((report) => {
+                  const deadline = getImageDeadlineInfo(report.imageExpiryDate);
+                  return (
+                    <div key={report.id} className="glass-card rounded-3xl p-6 border border-slate-800 space-y-4">
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">{report.id}</span>
+                          <h3 className="font-bold text-base mt-1">{report.title}</h3>
+                        </div>
+                        <span className="text-xs font-semibold text-emerald-400 shrink-0">{report.verificationStatus}</span>
+                      </div>
+
+                      <div className="relative">
+                        <img
+                          src={report.imageUrl}
+                          alt={report.title}
+                          className={`w-full h-40 object-cover rounded-2xl bg-slate-900 border border-slate-700 ${deadline.isExpired ? 'opacity-60 grayscale-[45%]' : ''}`}
+                        />
+                        <div className={`absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full text-[11px] font-semibold backdrop-blur-md border flex items-center gap-1.5 tabular-nums ${deadline.badgeClass}`}>
+                          {deadline.isExpired ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                          <span>{deadline.label}</span>
+                        </div>
+                        <div className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md text-[11px] text-slate-200 border border-white/10">
+                          Deadline: {deadline.expiryFormatted}
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-300">{report.description}</p>
+
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-800">
+                        {report.verificationStatus !== 'VERIFIED' && (
+                          <button
+                            onClick={() => onVerifyReport(report.id)}
+                            className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer"
+                          >
+                            Verify Report
+                          </button>
+                        )}
+                        {onRevalidateImage && (
+                          <button
+                            onClick={() => onRevalidateImage(report.id, undefined, extendDays)}
+                            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Extend +{extendDays}d</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setSelectedReportForAction(report);
+                            setShowPublishModal(true);
+                          }}
+                          disabled={report.verificationStatus !== 'VERIFIED'}
+                          className={`flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                            report.verificationStatus === 'VERIFIED'
+                              ? 'bg-cyan-600 hover:bg-cyan-500 text-white cursor-pointer'
+                              : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                          }`}
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Publish Complaint</span>
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-xs font-semibold text-emerald-400">{report.verificationStatus}</span>
-                  </div>
-
-                  <img src={report.imageUrl} alt={report.title} className="w-full h-40 object-cover rounded-2xl bg-slate-900 border border-slate-700" />
-                  <p className="text-xs text-slate-300">{report.description}</p>
-
-                  <div className="flex gap-2 pt-2 border-t border-slate-800">
-                    {report.verificationStatus !== 'VERIFIED' && (
-                      <button
-                        onClick={() => onVerifyReport(report.id)}
-                        className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer"
-                      >
-                        Verify Report
-                      </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        setSelectedReportForAction(report);
-                        setShowPublishModal(true);
-                      }}
-                      disabled={report.verificationStatus !== 'VERIFIED'}
-                      className={`flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 ${
-                        report.verificationStatus === 'VERIFIED'
-                          ? 'bg-cyan-600 hover:bg-cyan-500 text-white cursor-pointer'
-                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                      }`}
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Publish Complaint</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
             </div>
           </div>
         )}

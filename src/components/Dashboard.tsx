@@ -1,6 +1,7 @@
 import React from 'react';
-import { AlertTriangle, Route, FileCheck, CheckCircle2, ArrowRight, ShieldCheck, MapPin, Navigation, Sparkles } from 'lucide-react';
+import { AlertTriangle, Route, FileCheck, CheckCircle2, ArrowRight, ShieldCheck, MapPin, Navigation, Sparkles, Clock } from 'lucide-react';
 import { Report } from '../types';
+import { getImageDeadlineInfo } from '../utils/imageDeadline';
 
 interface DashboardProps {
   reports: Report[];
@@ -159,37 +160,46 @@ export const Dashboard: React.FC<DashboardProps> = ({ reports, setActiveTab }) =
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {reports.slice(0, 3).map((report) => (
-            <div
-              key={report.id}
-              onClick={() => setActiveTab('community')}
-              className="glass-card rounded-2xl overflow-hidden cursor-pointer hover:border-blue-500/40 transition-all flex flex-col"
-            >
-              <div className="relative h-48 overflow-hidden bg-slate-900">
-                <img
-                  src={report.imageUrl}
-                  alt={report.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-semibold bg-black/70 backdrop-blur-md text-white border border-white/10 uppercase tracking-wider">
-                  {report.issueType.replace('_', ' ')}
+          {reports.slice(0, 3).map((report) => {
+            const deadline = getImageDeadlineInfo(report.imageExpiryDate);
+            return (
+              <div
+                key={report.id}
+                onClick={() => setActiveTab('community')}
+                className="glass-card rounded-2xl overflow-hidden cursor-pointer hover:border-blue-500/40 transition-all flex flex-col group"
+              >
+                <div className="relative h-48 overflow-hidden bg-slate-900">
+                  <img
+                    src={report.imageUrl}
+                    alt={report.title}
+                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${deadline.isExpired ? 'opacity-65 grayscale-[40%]' : ''}`}
+                  />
+                  <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-semibold bg-black/70 backdrop-blur-md text-white border border-white/10 uppercase tracking-wider">
+                    {report.issueType.replace('_', ' ')}
+                  </div>
+                  <div className={`absolute bottom-3 left-3 px-2.5 py-1 rounded-full text-[11px] font-semibold backdrop-blur-md border flex items-center gap-1.5 tabular-nums ${deadline.badgeClass}`}>
+                    {deadline.isExpired ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                    <span>{deadline.shortLabel}</span>
+                  </div>
+                </div>
+                <div className="p-5 flex-1 flex flex-col justify-between space-y-3">
+                  <div>
+                    <h3 className="font-bold text-white text-base line-clamp-1">{report.title}</h3>
+                    <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="truncate">{report.address}</span>
+                    </p>
+                  </div>
+                  <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">
+                      Deadline: <strong className={deadline.isExpired ? 'text-red-400' : deadline.isExpiringSoon ? 'text-amber-300' : 'text-slate-200'}>{deadline.expiryFormatted}</strong>
+                    </span>
+                    <span className="text-emerald-400 font-medium">{report.verificationStatus}</span>
+                  </div>
                 </div>
               </div>
-              <div className="p-5 flex-1 flex flex-col justify-between space-y-3">
-                <div>
-                  <h3 className="font-bold text-white text-base line-clamp-1">{report.title}</h3>
-                  <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                    <span>{report.address}</span>
-                  </p>
-                </div>
-                <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
-                  <span className="text-slate-400">Votes: <strong className="text-white">{report.stillPresentVotes}</strong></span>
-                  <span className="text-emerald-400 font-medium">{report.verificationStatus}</span>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

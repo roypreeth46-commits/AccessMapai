@@ -13,11 +13,12 @@ import { AdminPortal } from './components/AdminPortal';
 import { LoginModal } from './components/LoginModal';
 import { SosModal } from './components/SosModal';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
-import { Report, GovernmentDepartment, AccessibilitySettings } from './types';
+import { Report, GovernmentDepartment, AccessibilitySettings, RouteOption } from './types';
 import { SEED_REPORTS, SEED_DEPARTMENTS } from './data/seedData';
+import { computeExpiryDate } from './utils/imageDeadline';
 import { AlertOctagon, Award, Command } from 'lucide-react';
 
-const REPORTS_STORAGE_KEY = 'accessmap_reports_v1';
+const REPORTS_STORAGE_KEY = 'accessmap_reports_v2';
 
 function loadInitialReports(): Report[] {
   try {
@@ -42,6 +43,7 @@ export default function App() {
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [reports, setReports] = useState<Report[]>(loadInitialReports);
   const [departments, setDepartments] = useState<GovernmentDepartment[]>(SEED_DEPARTMENTS);
+  const [activeRoute, setActiveRoute] = useState<RouteOption | null>(null);
   const [userProfile, setUserProfile] = useState({ points: 350, badge: 'Gold Mobility Guardian', reportsCount: 4, votesCount: 12 });
 
   const [settings, setSettings] = useState<AccessibilitySettings>({
@@ -269,6 +271,43 @@ export default function App() {
     );
   };
 
+  const handleRevalidateImage = async (reportId: string, newImageUrl?: string, validityDays: number = 7) => {
+    try {
+      const res = await fetch(`/api/reports/${reportId}/revalidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: newImageUrl,
+          validityDays,
+          actorEmail: currentUser?.email || 'user@accessmap.ai',
+        }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success && data.report) {
+          setReports((prev) => prev.map((r) => (r.id === reportId ? data.report : r)));
+          return;
+        }
+      }
+    } catch {
+      // Static hosting fallback below
+    }
+
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? {
+              ...r,
+              imageUrl: newImageUrl || r.imageUrl,
+              imageExpiryDate: computeExpiryDate(validityDays),
+              imageValidityStatus: validityDays <= 2 ? 'EXPIRING_SOON' : 'ACTIVE',
+            }
+          : r
+      )
+    );
+  };
+
   // If user is not logged in, show login portal modal on website load
   if (!currentUser) {
     return (
@@ -350,11 +389,29 @@ export default function App() {
 
         <main className="flex-1 overflow-y-auto">
           {activeTab === 'dashboard' && <Dashboard reports={reports} setActiveTab={setActiveTab} />}
-          {activeTab === 'map' && <MapView reports={reports} />}
-          {activeTab === 'routes' && <RoutePlanner />}
+          {activeTab === 'map' && (
+            <MapView
+              reports={reports}
+              activeRoute={activeRoute}
+              onClearRoute={() => setActiveRoute(null)}
+            />
+          )}
+          {activeTab === 'routes' && (
+            <RoutePlanner
+              reports={reports}
+              onNavigateRoute={(route) => {
+                setActiveRoute(route);
+                setActiveTab('map');
+              }}
+            />
+          )}
           {activeTab === 'report' && <ReportIssue onReportSubmitted={handleReportSubmitted} setActiveTab={setActiveTab} />}
-          {activeTab === 'my-reports' && <MyReports reports={reports} setActiveTab={setActiveTab} />}
-          {activeTab === 'community' && <CommunityPage reports={reports} onVote={handleVote} />}
+          {activeTab === 'my-reports' && (
+            <MyReports reports={reports} setActiveTab={setActiveTab} onRevalidateImage={handleRevalidateImage} />
+          )}
+          {activeTab === 'community' && (
+            <CommunityPage reports={reports} onVote={handleVote} onRevalidateImage={handleRevalidateImage} />
+          )}
         </main>
 
         {/* Floating SOS Emergency Button */}
@@ -391,6 +448,7 @@ export default function App() {
           onVerifyReport={handleVerifyReport}
           onRejectReport={handleRejectReport}
           onPublishComplaint={handlePublishComplaint}
+          onRevalidateImage={handleRevalidateImage}
           onClose={() => setIsAdminOpen(false)}
         />
       )}

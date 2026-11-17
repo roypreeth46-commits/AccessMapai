@@ -195,8 +195,8 @@ const seedReports: Report[] = [
     authenticityScore: 0.95,
     stillPresentVotes: 18,
     noLongerPresentVotes: 2,
-    imageExpiryDate: new Date(Date.now() + 86400000 * 4).toISOString(),
-    imageValidityStatus: 'ACTIVE',
+    imageExpiryDate: new Date(Date.now() + 3600000 * 18).toISOString(),
+    imageValidityStatus: 'EXPIRING_SOON',
     adminVerifiedBy: 'admin@gmail.com',
     adminVerificationTimestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
     publishedDepartmentId: 'dept-mng-2',
@@ -223,8 +223,8 @@ const seedReports: Report[] = [
     authenticityScore: 0.93,
     stillPresentVotes: 9,
     noLongerPresentVotes: 0,
-    imageExpiryDate: new Date(Date.now() + 86400000 * 2).toISOString(),
-    imageValidityStatus: 'ACTIVE',
+    imageExpiryDate: new Date(Date.now() - 86400000 * 1).toISOString(),
+    imageValidityStatus: 'EXPIRED',
   },
 ];
 
@@ -354,7 +354,8 @@ app.get('/api/reports', (req, res) => {
 
 // API: Submit new report & award reward points
 app.post('/api/reports', (req, res) => {
-  const { userId, userName, userEmail, issueType, title, description, imageUrl, latitude, longitude, address, aiConfidence, aiExplanation, authenticityScore, verificationStatus } = req.body;
+  const { userId, userName, userEmail, issueType, title, description, imageUrl, latitude, longitude, address, aiConfidence, aiExplanation, authenticityScore, verificationStatus, validityDays = 7 } = req.body;
+  const safeDays = Math.max(1, Math.min(90, Number(validityDays) || 7));
 
   const newReport: Report = {
     id: `REP-MNG-${Math.floor(100 + Math.random() * 900)}`,
@@ -376,8 +377,8 @@ app.post('/api/reports', (req, res) => {
     authenticityScore: authenticityScore || 0.96,
     stillPresentVotes: 1,
     noLongerPresentVotes: 0,
-    imageExpiryDate: new Date(Date.now() + 86400000 * 7).toISOString(),
-    imageValidityStatus: 'ACTIVE',
+    imageExpiryDate: new Date(Date.now() + 86400000 * safeDays).toISOString(),
+    imageValidityStatus: safeDays <= 2 ? 'EXPIRING_SOON' : 'ACTIVE',
   };
 
   dbReports.unshift(newReport);
@@ -483,6 +484,33 @@ app.post('/api/reports/:id/verify', (req, res) => {
     action: 'VERIFY_REPORT',
     targetId: reportId,
     details: 'Admin verified obstacle report as legitimate infrastructure issue.',
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json({ success: true, report });
+});
+
+// Revalidate or Extend Image Deadline
+app.post('/api/reports/:id/revalidate', (req, res) => {
+  const reportId = req.params.id;
+  const { imageUrl, validityDays = 7, actorEmail = 'user@accessmap.ai' } = req.body;
+
+  const report = dbReports.find((r) => r.id === reportId);
+  if (!report) return res.status(404).json({ error: 'Report not found' });
+
+  const safeDays = Math.max(1, Math.min(90, Number(validityDays) || 7));
+  if (imageUrl) {
+    report.imageUrl = imageUrl;
+  }
+  report.imageExpiryDate = new Date(Date.now() + 86400000 * safeDays).toISOString();
+  report.imageValidityStatus = safeDays <= 2 ? 'EXPIRING_SOON' : 'ACTIVE';
+
+  dbAuditLogs.unshift({
+    id: `log-${Date.now()}`,
+    adminEmail: actorEmail,
+    action: 'REVALIDATE_IMAGE',
+    targetId: reportId,
+    details: `Image verification deadline renewed for ${safeDays} days (until ${report.imageExpiryDate}).`,
     timestamp: new Date().toISOString(),
   });
 

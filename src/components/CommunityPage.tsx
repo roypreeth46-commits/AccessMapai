@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
-import { Users, ThumbsUp, ThumbsDown, MessageSquare, MapPin, Clock, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Users, ThumbsUp, ThumbsDown, MapPin, Clock, AlertTriangle, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { Report } from '../types';
+import { getImageDeadlineInfo } from '../utils/imageDeadline';
 
 interface CommunityPageProps {
   reports: Report[];
   onVote: (reportId: string, voteType: 'STILL_PRESENT' | 'NO_LONGER_PRESENT') => void;
+  onRevalidateImage?: (reportId: string, newImageUrl?: string, validityDays?: number) => void;
 }
 
-export const CommunityPage: React.FC<CommunityPageProps> = ({ reports, onVote }) => {
+export const CommunityPage: React.FC<CommunityPageProps> = ({ reports, onVote, onRevalidateImage }) => {
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
+  const [revalidatedId, setRevalidatedId] = useState<string | null>(null);
   const [commentsMap, setCommentsMap] = useState<{ [key: string]: string[] }>({
-    'REP-1001': ['Still very dangerous at night!', 'Crews inspected yesterday.'],
-    'REP-1002': ['Barriers are still blocking the path.'],
+    'REP-MNG-01': ['Still very dangerous during evening rush!', 'Crews inspected yesterday.'],
+    'REP-MNG-02': ['Two-wheelers still blocking the ramp near college gate.'],
   });
 
   const handleAddComment = (reportId: string, e: React.FormEvent) => {
@@ -26,6 +29,18 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ reports, onVote })
     }
   };
 
+  const handlePhotoReupload = (reportId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onRevalidateImage) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      onRevalidateImage(reportId, reader.result as string, 7);
+      setRevalidatedId(reportId);
+      setTimeout(() => setRevalidatedId(null), 3000);
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8 animate-fadeIn pb-16">
       {/* Header */}
@@ -36,7 +51,7 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ reports, onVote })
           </div>
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-white">Community Accessibility Feed</h1>
-            <p className="text-sm text-slate-300">Verify obstacle reports, vote on real-time presence, and collaborate with local mobility advocates</p>
+            <p className="text-sm text-slate-300">Verify obstacle reports, track photo deadlines, and refresh expired hazard evidence</p>
           </div>
         </div>
       </div>
@@ -47,28 +62,87 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ reports, onVote })
           const totalVotes = report.stillPresentVotes + report.noLongerPresentVotes;
           const stillPresentPct = totalVotes > 0 ? Math.round((report.stillPresentVotes / totalVotes) * 100) : 100;
           const reportComments = commentsMap[report.id] || [];
+          const deadline = getImageDeadlineInfo(report.imageExpiryDate);
 
           return (
             <div key={report.id} className="glass-card rounded-3xl p-6 border border-slate-800 space-y-5 flex flex-col justify-between">
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-2">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
                     {report.issueType.replace('_', ' ')}
                   </span>
                   <h3 className="text-lg font-bold text-white mt-2">{report.title}</h3>
                   <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                    <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                     <span>{report.address}</span>
                   </p>
                 </div>
-                <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 shrink-0">
                   {report.verificationStatus}
                 </span>
               </div>
 
               <div className="relative h-48 rounded-2xl overflow-hidden bg-slate-900 border border-slate-700">
-                <img src={report.imageUrl} alt={report.title} className="w-full h-full object-cover" />
+                <img
+                  src={report.imageUrl}
+                  alt={report.title}
+                  className={`w-full h-full object-cover ${deadline.isExpired ? 'opacity-60 grayscale-[45%]' : ''}`}
+                />
+                <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-full text-[11px] font-semibold backdrop-blur-md border flex items-center gap-1.5 tabular-nums ${deadline.badgeClass}`}>
+                  {deadline.isExpired ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                  <span>{deadline.label}</span>
+                </div>
+                <div className="absolute bottom-2.5 left-3 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md text-[11px] text-slate-200 border border-white/10">
+                  Deadline: {deadline.expiryFormatted}
+                </div>
               </div>
+
+              {(deadline.isExpired || deadline.isExpiringSoon) && onRevalidateImage && (
+                <div className={`p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
+                  deadline.isExpired
+                    ? 'bg-red-500/10 border-red-500/30 text-red-200'
+                    : 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>
+                      {deadline.isExpired
+                        ? 'Image deadline expired. Upload a fresh photo to keep this report active.'
+                        : `Image expires soon (${deadline.expiryFormatted}). Refresh photo to extend deadline.`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold flex items-center gap-1.5 cursor-pointer transition-colors">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Upload Fresh Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handlePhotoReupload(report.id, e)}
+                        className="hidden"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onRevalidateImage(report.id, undefined, 7);
+                        setRevalidatedId(report.id);
+                        setTimeout(() => setRevalidatedId(null), 3000);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold cursor-pointer"
+                    >
+                      Confirm Still Active (+7d)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {revalidatedId === report.id && (
+                <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Photo verification deadline renewed for 7 days.</span>
+                </div>
+              )}
 
               <p className="text-xs text-slate-300">{report.description}</p>
 

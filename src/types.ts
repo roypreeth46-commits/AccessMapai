@@ -70,4 +70,9 @@ export interface RouteOption {
   limitations: string[];
   color: string;
   path: { lat: number; lng: number }[];
+  startName?: string;
+  endName?: string;
+  startCoords?: { lat: number; lng: number };
+  endCoords?: { lat: number; lng: number };
+  steps?: string[];
 }
